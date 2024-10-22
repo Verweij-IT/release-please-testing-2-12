@@ -1,0 +1,77 @@
+name: Hotfix - Create branch to main
+
+on:
+  push:
+    branches:
+      - hotfix/**
+
+jobs:
+  output-for-condition:
+    name: Output for condition
+    runs-on: ubuntu-latest
+    steps:
+      - name: Output GitHub event
+        if: always()
+        env:
+          GH_EVENT_JSON: ${{ toJSON(github.event) }}
+        run: |
+          echo "$GH_EVENT_JSON"
+
+      - name: Output condition
+        if: always()
+        run: |
+          echo "github.event.created: ${{ github.event.created }}"
+          echo "github.event.commits[0].author.name: ${{ github.event.commits[0].author.name }}"
+          echo "github.event.ref: ${{ github.event.ref }}"
+
+  create-fix-branch:
+    name: Create fix branch
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # Required for creating PRs
+      contents: write # Required for checking out code and creating branch
+    # Only the first push results in github.event.created being equal to true, and is not from the github-actions bot
+    # So, in this case we can create the branch and PR
+    # All the other pushes will be ignored, the developer is responsible of bringing over all other commits after the hotfix is deployed
+    if: github.event.created && github.event.commits[0].author.name != 'github-actions[bot]'
+    steps:
+      - name: Output GitHub event
+        if: always()
+        env:
+          GH_EVENT_JSON: ${{ toJSON(github.event) }}
+        run: |
+          echo "$GH_EVENT_JSON"
+
+      - name: Create token from GitHub App
+        uses: actions/create-github-app-token@v1.11.0
+        id: get-token
+        with:
+          app-id: ${{ secrets.GHAPP_APP_DEPLOYER_APP_ID }}
+          private-key: ${{ secrets.GHAPP_APP_DEPLOYER_PRIVATE_KEY }}
+          owner: Verweij-IT
+
+      - name: Trim of hot from branch ref
+        id: trim-branch
+        run: |
+          echo "Hotfix branch ref: ${{ github.event.ref }}"
+          FIX_BRANCH_NAME=$(echo ${{ github.event.ref }} | sed 's|refs/heads/hotfix/|refs/heads/hotfix-|g')-to-${{ github.event.repository.default_branch }}
+          echo "Fix branch ref: $FIX_BRANCH_NAME"
+          echo "fix-branch-name=$FIX_BRANCH_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create branch
+        uses: peterjgrainger/action-create-branch@v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+        with:
+          branch: ${{ steps.trim-branch.outputs.fix-branch-name }}
+
+      - name: Create PR for branch
+        run: |
+          gh pr create \
+            --head "${{ steps.trim-branch.outputs.fix-branch-name }}" \
+            --base ${{ github.event.repository.default_branch }} \
+            --title "fix: add ${{ github.event.ref }} changes to ${{ steps.trim-branch.outputs.fix-branch-name }}" \
+            --body "Adding changes made in ${{ github.event.ref }} so that it can be merged into main and cannot cause regression in the next deployment." \
+            --repo ${{ github.event.repository.full_name }}
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}

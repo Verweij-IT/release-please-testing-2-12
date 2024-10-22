@@ -1,0 +1,258 @@
+name: Release versioning
+
+on:
+  push:
+    # Took hotfix from here: https://github.com/googleapis/release-please-action/issues/930#issuecomment-2258075113
+    branches:
+      - main
+      - 'hotfix/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run-release-please:
+    name: Run release-please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release-please.outputs.release_created }}
+      released_version: ${{ steps.release-please.outputs.version }}
+      released_sha: ${{ steps.release-please.outputs.sha }}
+    steps:
+      - name: Output GitHub event
+        if: always()
+        env:
+          GH_EVENT_JSON: ${{ toJSON(github.event) }}
+        run: |
+          echo "$GH_EVENT_JSON"
+
+      - name: Create token from GitHub App
+        uses: actions/create-github-app-token@v1.11.0
+        id: get-token
+        with:
+          app-id: ${{ secrets.GHAPP_APP_DEPLOYER_APP_ID }}
+          private-key: ${{ secrets.GHAPP_APP_DEPLOYER_PRIVATE_KEY }}
+          owner: Verweij-IT
+  
+      - name: Run release-please
+        id: release-please
+        uses: googleapis/release-please-action@v4.1.3
+        with:
+          # Default GITHUB_TOKEN might have to be replaced with self-created PAT once starting to trigger with on:release:created
+          token: ${{ steps.get-token.outputs.token }}
+          target-branch: ${{ github.ref_name }}
+          include-component-in-tag: true
+
+      - name: Dump Release Please Output
+        env:
+          RELEASE_PLEASE_OUTPUT: ${{ toJSON(steps.release-please.outputs) }}
+        run: |
+          echo "$RELEASE_PLEASE_OUTPUT"
+
+  hotfix-causes-bump:
+    name: Bump release-please version due hotfix
+    runs-on: ubuntu-latest
+    needs: run-release-please
+    if: startsWith(github.ref, 'refs/heads/hotfix/') && needs.run-release-please.outputs.release_created == 'true'
+    steps:
+      - name: Create token from GitHub App
+        uses: actions/create-github-app-token@v1.11.0
+        id: get-token
+        with:
+          app-id: ${{ secrets.GHAPP_APP_DEPLOYER_APP_ID }}
+          private-key: ${{ secrets.GHAPP_APP_DEPLOYER_PRIVATE_KEY }}
+          owner: Verweij-IT
+      
+      - name: Install semver package
+        run: |
+          wget -O /usr/local/bin/semver https://raw.githubusercontent.com/fsaintjacques/semver-tool/1a547a75f946717223fb7ca821ba6f3f337e9aca/src/semver && \
+          chmod +x /usr/local/bin/semver && \
+          semver --version
+
+      - name: Get latest tag from hotfix branch
+        id: hotfix-version
+        run: |
+          hotfix_version=${{ needs.run-release-please.outputs.released_version }}
+          if [ -z "$hotfix_version" ]; then
+            echo "Hotfix version is empty and should not be emtpy, exiting..."
+            exit 1
+          fi
+          echo "Hotfix version: $hotfix_version"
+          echo "value=$hotfix_version" >> $GITHUB_OUTPUT
+
+      - name: Checkout ${{ github.event.ref }} branch
+        uses: actions/checkout@v4.2.1
+        with:
+          fetch-depth: 0 # Required otherwise latest tag fetch will fail
+
+      - name: Check existence of release please branch on ${{ github.event.repository.default_branch }}
+        id: release-please-branch-exists
+        run: |
+          if [[ -n $(git ls-remote --heads origin release-please--branches--${{ github.event.repository.default_branch }}) ]]; then
+            echo "Branch release-please--branches--${{ github.event.repository.default_branch }} exists"
+            echo "value=true" >> $GITHUB_OUTPUT
+          else
+            echo "Branch release-please--branches--${{ github.event.repository.default_branch }} does not exist"
+            echo "value=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout release please branch on ${{ github.event.repository.default_branch }}
+        if: ${{ steps.release-please-branch-exists.outputs.value == 'true' }}
+        uses: actions/checkout@v4.2.1
+        with:
+          fetch-depth: 0 # Required otherwise latest tag fetch will fail
+          ref: refs/heads/release-please--branches--${{ github.event.repository.default_branch }}
+
+      - name: Get latest tag defined by release-please
+        id: pending-version
+        if: ${{ steps.release-please-branch-exists.outputs.value == 'true' }}
+        run: |
+          pending_version=$(jq -r '."."' .release-please-manifest.json)
+          if [ -z "$pending_version" ]; then
+            echo "Pending (release-please) version is empty and should not be emtpy, exiting..."
+            exit 1
+          fi
+          echo "Pending version: $pending_version"
+          echo "value=$pending_version" >> $GITHUB_OUTPUT
+
+      - name: Checkout ${{ github.event.repository.default_branch }} branch
+        uses: actions/checkout@v4.2.1
+        with:
+          fetch-depth: 0 # Required otherwise latest tag fetch will fail
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Get latest tag from ${{ github.event.repository.default_branch }} branch
+        id: default-branch-version
+        run: |
+          main_version=$(git describe --tags --abbrev=0)
+          if [ -z "$main_version" ]; then
+            echo "${{ github.event.repository.default_branch }} version is empty and should not be emtpy, exiting..."
+            exit 1
+          fi
+          if [[ $main_version == v* ]]; then
+            echo "${{ github.event.repository.default_branch }} version starts with a v, removing it."
+            main_version=${main_version#v}
+            echo "${{ github.event.repository.default_branch }} version is now $main_version"
+          fi
+          echo "${{ github.event.repository.default_branch }} version: $main_version"
+          echo "value=$main_version" >> $GITHUB_OUTPUT
+      
+      - name: Get pending kind of SemVer bump
+        id: kind-of-pending-bump
+        run: |
+          main_version="${{ steps.default-branch-version.outputs.value }}"
+          pending_version="${{ steps.pending-version.outputs.value }}"
+          hotfix_version="${{ steps.hotfix-version.outputs.value }}"
+          if [ -z "$pending_version" ]; then
+            pending_version=$hotfix_version
+            echo "No pending version set, setting hotfix_version ($hotfix_version) as pending version"
+          elif [ "$main_version" == "$pending_version" ]; then
+            pending_version=$hotfix_version
+            echo "Pending version ($pending_version) is equal to main version ($main_version), setting hotfix_version ($hotfix_version) as pending version"
+          fi
+          kind_of_pending_bump=$(semver diff $main_version $pending_version)
+          echo "Kind of pending SemVer bump: $kind_of_pending_bump"
+          echo "value=$kind_of_pending_bump" >> $GITHUB_OUTPUT
+
+      - name: Calculate release_as version
+        id: release-as-version
+        run: |
+          kind_of_pending_bump="${{ steps.kind-of-pending-bump.outputs.value }}"
+          hotfix_version="${{ steps.hotfix-version.outputs.value }}"
+          release_as_version=$(semver bump $kind_of_pending_bump $hotfix_version)
+          echo "Release-As version: $release_as_version"
+          echo "value=$release_as_version" >> $GITHUB_OUTPUT
+
+      - name: Is bump on ${{ github.event.repository.default_branch }} required
+        id: required-release-as-bump
+        run: |
+          release_as_version="${{ steps.release-as-version.outputs.value }}"
+          pending_version="${{ steps.pending-version.outputs.value }}"
+          hotfix_version="${{ steps.hotfix-version.outputs.value }}"
+          if [ -z "$pending_version" ]; then
+            pending_version=$hotfix_version
+            echo "No pending version set, setting hotfix_version ($hotfix_version) as pending version"
+          fi
+          comparison=$(semver compare $release_as_version $pending_version)
+          echo "Comparison: $comparison"
+          # Comparison outcomes documented here https://github.com/fsaintjacques/semver-tool/blob/1a547a75f946717223fb7ca821ba6f3f337e9aca/src/semver#L77-L79
+          if [ "$comparison" == "-1" ]; then
+            echo "outcome=false" >> $GITHUB_OUTPUT
+            echo "Pending version ($pending_version) is newer than release-as ($release_as_version) version"
+            echo "Release-As bump is not required"
+          elif [ "$comparison" == "0" ]; then
+            echo "outcome=false" >> $GITHUB_OUTPUT
+            echo "Pending version ($pending_version) is equal to release-as ($release_as_version) version"
+            echo "Release-As bump is not required"
+          elif [ "$comparison" == "1" ]; then
+            echo "outcome=true" >> $GITHUB_OUTPUT
+            echo "Pending version ($pending_version) is older than release-as ($release_as_version) version"
+            echo "Release-As bump is required"
+          else
+            echo "outcome=false" >> $GITHUB_OUTPUT
+            echo "Outcome was something unexpected ($comparison) and should normally be -1, 0 or 1."
+            echo "Release-As bump will not be done"
+          fi
+
+      - name: Set release-as branch name
+        id: release-as-branch
+        if: ${{ steps.required-release-as-bump.outputs.outcome == 'true' }}
+        run: |
+          release_as_version="${{ steps.release-as-version.outputs.value }}"
+          branch_prefix="refs/heads/chore/release-as"
+          release_as_hyphens=$(echo $release_as_version | sed 's|\.|-|g')
+          workflow_triggered_by_sha=${{ github.sha }}
+          branch_name="$branch_prefix-$release_as_hyphens-$workflow_triggered_by_sha"
+          echo "Release-As branch: $branch_name"
+          echo "name=$branch_name" >> $GITHUB_OUTPUT
+
+      - name: Fetch latest commit from ${{ github.event.repository.default_branch }}
+        id: latest-commit
+        if: ${{ steps.required-release-as-bump.outputs.outcome == 'true' }}
+        run: |
+          latest_commit_sha=$(git log -n 1 --pretty=format:"%H" ${{ github.event.repository.default_branch }})
+          echo "Latest commit SHA: $latest_commit_sha"
+          echo "sha=$latest_commit_sha" >> $GITHUB_OUTPUT
+
+      - name: Create branch
+        uses: peterjgrainger/action-create-branch@v3.0.0
+        if: ${{ steps.required-release-as-bump.outputs.outcome == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+        with:
+          sha: ${{ steps.latest-commit.outputs.sha }}
+          branch: ${{ steps.release-as-branch.outputs.name }}
+
+      - name: Checkout created branch ${{ steps.release-as-branch.outputs.name }}
+        if: ${{ steps.required-release-as-bump.outputs.outcome == 'true' }}
+        uses: actions/checkout@v4.2.1
+        with:
+          fetch-depth: 0 # Required otherwise latest tag fetch will fail
+          ref: ${{ steps.release-as-branch.outputs.name }}
+
+      - name: Set Git config
+        if: ${{ steps.required-release-as-bump.outputs.outcome == 'true' }}
+        run: |
+          git config user.name "${{ github.triggering_actor}}"
+          git config user.email "${{ github.triggering_actor}}@users.noreply.github.com"
+      
+      - name: Increase release-please version on ${{ github.event.repository.default_branch }}
+        if: ${{ steps.required-release-as-bump.outputs.outcome == 'true' }}
+        run: |
+          release_as_version="${{ steps.release-as-version.outputs.value }}"
+          git commit --allow-empty -m "chore: empty commit for creation of PR" && \
+          git push
+
+      - name: Create PR for branch
+        if: ${{ steps.required-release-as-bump.outputs.outcome == 'true' }}
+        run: |
+          gh pr create \
+            --head "${{ steps.release-as-branch.outputs.name }}" \
+            --base ${{ github.event.repository.default_branch }} \
+            --title "chore: release ${{ steps.release-as-version.outputs.value }}" \
+            --body "Release-As: ${{ steps.release-as-version.outputs.value }}" \
+            --repo ${{ github.event.repository.full_name }}
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
