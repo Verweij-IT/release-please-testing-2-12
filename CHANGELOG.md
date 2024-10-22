@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/Verweij-IT/release-please-testing-2/compare/v1.1.0...v1.1.1) (2024-10-22)
+
+
+### Bug Fixes
+
+* add hotfix text file ([2f22a2c](https://github.com/Verweij-IT/release-please-testing-2/commit/2f22a2cae91bb0487f1d8fe217bf146ca6916b7a))
+
 ## [1.1.0](https://github.com/Verweij-IT/release-please-testing-2/compare/v1.0.0...v1.1.0) (2024-10-22)
 
 
