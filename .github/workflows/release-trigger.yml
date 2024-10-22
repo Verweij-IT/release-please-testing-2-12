@@ -247,12 +247,23 @@ jobs:
 
       - name: Create PR for branch
         if: ${{ steps.required-release-as-bump.outputs.outcome == 'true' }}
+        id: created-release-as-pr
         run: |
-          gh pr create \
+          created_pr_url=$(gh pr create \
             --head "${{ steps.release-as-branch.outputs.name }}" \
             --base ${{ github.event.repository.default_branch }} \
-            --title "chore: release ${{ steps.release-as-version.outputs.value }}" \
-            --body "Release-As: ${{ steps.release-as-version.outputs.value }}" \
-            --repo ${{ github.event.repository.full_name }}
+            --title "chore: release-as ${{ steps.release-as-version.outputs.value }}" \
+            --body "Since a hotfix was created on another branch (${{ github.event.ref }}) than `${{ github.event.repository.default_branch }}`, we need to instruct release-please to take `${{ steps.release-as-version.outputs.value }}` as the next version." \
+            --repo ${{ github.event.repository.full_name }})
+          echo "Created PR URL: $created_pr_url"
+          echo "url=$created_pr_url" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+
+      - name: Automatically merge PR
+        if: ${{ steps.required-release-as-bump.outputs.outcome == 'true' }}
+        run: |
+          gh pr merge ${{ steps.created-release-as-pr.outputs.url }} --squash && \
+          echo "PR merged successfully"
         env:
           GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
