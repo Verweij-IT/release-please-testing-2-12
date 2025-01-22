@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/Verweij-IT/release-please-testing-2-12/compare/v1.2.1...v1.3.0) (2025-01-22)
+
+
+### Bug Fixes
+
+* added types property in on.release ([#16](https://github.com/Verweij-IT/release-please-testing-2-12/issues/16)) ([498af4d](https://github.com/Verweij-IT/release-please-testing-2-12/commit/498af4d7950683c430ac98d55db69a0335b541ce))
+
+
+### Miscellaneous Chores
+
+* release 1.3.0 ([#17](https://github.com/Verweij-IT/release-please-testing-2-12/issues/17)) ([b6b893e](https://github.com/Verweij-IT/release-please-testing-2-12/commit/b6b893ef4969268422cda54637d5441e00549bae))
+
 ## [1.2.1](https://github.com/Verweij-IT/release-please-testing-2-12/compare/v1.2.0...v1.2.1) (2025-01-22)
 
 
