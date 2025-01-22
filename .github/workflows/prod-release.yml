@@ -1,0 +1,22 @@
+name: Deploy prod
+
+on:
+  release:
+    - published
+
+jobs:
+  upload-release-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Output entire GitHub event
+        if: always()
+        env:
+          GH_EVENT_JSON: ${{ toJSON(github.event) }}
+        run: |
+          echo "$GH_EVENT_JSON"
+          
+      - name: Echo GitHub event.release context
+        if: always()
+        env:
+          RELEASE_EVENT_JSON: ${{ toJSON(github.event.release) }}
+        run: echo "$RELEASE_EVENT_JSON"
