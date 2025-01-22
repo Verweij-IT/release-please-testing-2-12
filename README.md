@@ -6,4 +6,4 @@ Make sure that under the repository settings, in the Pull Requests section, that
 
 # Testing production
 
-Add a workflow with `on.release.published`.
+Add a workflow with `on.release.types.published`.
