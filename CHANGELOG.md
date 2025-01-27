@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/Verweij-IT/release-please-testing-2-12/compare/v1.3.0...v1.4.0) (2025-01-27)
+
+
+### Features
+
+* change hardcoded org to github context ([#18](https://github.com/Verweij-IT/release-please-testing-2-12/issues/18)) ([bc5b8e3](https://github.com/Verweij-IT/release-please-testing-2-12/commit/bc5b8e36edfbab59cd9595bbc201bb2470f7b7a6))
+
 ## [1.3.0](https://github.com/Verweij-IT/release-please-testing-2-12/compare/v1.2.1...v1.3.0) (2025-01-22)
 
 
