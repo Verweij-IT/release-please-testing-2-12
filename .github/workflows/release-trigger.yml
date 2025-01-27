@@ -34,7 +34,7 @@ jobs:
         with:
           app-id: ${{ secrets.GHAPP_APP_DEPLOYER_APP_ID }}
           private-key: ${{ secrets.GHAPP_APP_DEPLOYER_PRIVATE_KEY }}
-          owner: Verweij-IT
+          owner: ${{ github.event.organization.login }}
   
       - name: Run release-please
         id: release-please
@@ -63,7 +63,7 @@ jobs:
         with:
           app-id: ${{ secrets.GHAPP_APP_DEPLOYER_APP_ID }}
           private-key: ${{ secrets.GHAPP_APP_DEPLOYER_PRIVATE_KEY }}
-          owner: Verweij-IT
+          owner: ${{ github.event.organization.login }}
       
       - name: Install semver package
         run: |
